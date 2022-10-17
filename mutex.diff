@@ -1,0 +1,47 @@
+commit 55a8e018fab71b34c275a16b691015a99336e0d7
+Author: Joel Fernandes (Google) <joel@joelfernandes.org>
+Date:   Mon Oct 17 01:30:36 2022 +0000
+
+    add mutex lock prctl
+    
+    Signed-off-by: Joel Fernandes (Google) <joel@joelfernandes.org>
+    Change-Id: I40a1f09181f8b38ac53dd5de801fed213da814f8
+
+diff --git a/include/uapi/linux/prctl.h b/include/uapi/linux/prctl.h
+index a5e06dcbba13..191958be0aeb 100644
+--- a/include/uapi/linux/prctl.h
++++ b/include/uapi/linux/prctl.h
+@@ -284,4 +284,7 @@ struct prctl_mm_map {
+ #define PR_SET_VMA		0x53564d41
+ # define PR_SET_VMA_ANON_NAME		0
+ 
++#define PR_DO_LOCK			70
++#define PR_DO_UNLOCK			71
++
+ #endif /* _LINUX_PRCTL_H */
+diff --git a/kernel/sys.c b/kernel/sys.c
+index b911fa6d81ab..2c60f50abe78 100644
+--- a/kernel/sys.c
++++ b/kernel/sys.c
+@@ -2345,6 +2345,8 @@ static int prctl_set_vma(unsigned long opt, unsigned long start,
+ }
+ #endif /* CONFIG_ANON_VMA_NAME */
+ 
++static DEFINE_MUTEX(test_mutex);
++
+ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
+ 		unsigned long, arg4, unsigned long, arg5)
+ {
+@@ -2623,6 +2625,12 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
+ 	case PR_SET_VMA:
+ 		error = prctl_set_vma(arg2, arg3, arg4, arg5);
+ 		break;
++	case PR_DO_LOCK:
++		mutex_lock(&test_mutex);
++		break;
++	case PR_DO_UNLOCK:
++		mutex_unlock(&test_mutex);
++		break;
+ 	default:
+ 		error = -EINVAL;
+ 		break;
