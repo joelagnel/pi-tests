@@ -1,0 +1,6 @@
+For proxy-exec
+	- pe_fairness_test.c
+	- mutex.diff accompanying kernel patch.
+
+For CFS prio inversion testing
+	- pi_mutex_test.c.orig: I modified Steven's test to show and fail for CFS PI issues.

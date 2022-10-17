@@ -10,10 +10,14 @@
 #include <pthread.h>
 #include <sched.h>
 #include <stdarg.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+
+#define PR_DO_LOCK                    70
+#define PR_DO_UNLOCK                  71
 
 double measure_time(void (*fun)(void)) {
     // Calculate the time taken by fun()
@@ -64,6 +68,8 @@ static void ftrace_write(const char *fmt, ...)
 	va_list ap;
 	int n;
 
+	printf(fmt);
+
 	if (mark_fd < 0)
 		return;
 
@@ -113,6 +119,7 @@ pthread_mutex_t L_lock;
 /* ordering of events */
 int running = 1;
 static pthread_barrier_t tell_main_A_is_running;
+static pthread_barrier_t tell_main_C_is_running;
 static pthread_barrier_t flag_C_to_start_B;
 static pthread_barrier_t tell_main_B_is_running;
 static pthread_barrier_t tell_main_C_has_lock_L;
@@ -226,6 +233,8 @@ static void *thread_A(void *arg)
 	ftrace_write("A is running\n");
 	// pthread_barrier_wait(&tell_main_A_is_running);
 
+	// Will block on lock held by C.
+	prctl(PR_DO_LOCK);
 	while (1)
 		func();
 #if 0
@@ -287,8 +296,10 @@ static void *thread_C(void *arg)
 
 	c_pid = gettid();
 
-	ftrace_write("C is running\n");
-	// pthread_barrier_wait(&tell_main_A_is_running);
+	ftrace_write("C is running with lock held\n");
+	prctl(PR_DO_LOCK);
+
+	pthread_barrier_wait(&tell_main_C_is_running);
 
 	while (1)
 		func();
@@ -432,22 +443,30 @@ static void perr(const char *fmt, ...)
 int test_task_spin(int block)
 {
 	pthread_t A,B,C,D;
-	int ret = pthread_create(&A, NULL, thread_A, NULL);
+	int ret;
+
+	ret = pthread_create(&C, NULL, thread_C, NULL);
+	if (ret < 0)
+		perr("creating thread C");
+
+	pthread_barrier_wait(&tell_main_C_is_running);
+
+	printf("C is created with lock held, now create A.\n");
+
+	ret = pthread_create(&A, NULL, thread_A, NULL);
 	if (ret < 0)
 		perr("creating thread A");
 
 	ret = pthread_create(&B, NULL, thread_B, NULL);
 	if (ret < 0)
-		perr("creating thread A");
-
-	ret = pthread_create(&C, NULL, thread_C, NULL);
-	if (ret < 0)
-		perr("creating thread A");
+		perr("creating thread B");
 
 	ret = pthread_create(&D, NULL, thread_D, NULL);
 	if (ret < 0)
-		perr("creating thread A");
+		perr("creating thread D");
 
+	printf("Starting joins\n");
+	fflush(0);
 	pthread_join(A, NULL);
 	pthread_join(B, NULL);
 	pthread_join(C, NULL);
@@ -561,9 +580,8 @@ int main (int argc, char **argv)
 				break;
 		}
 	}
-#endif
 
-	// printf("When C is not blocked, it shoud take: %lf secs\n",  measure_time(c_spin_a_little));
+	printf("When C is not blocked, it shoud take: %lf secs\n",  measure_time(c_spin_a_little));
 
 	setup_ftrace_marker();
 
@@ -580,6 +598,10 @@ int main (int argc, char **argv)
 	pthread_barrier_init(&flag_C_to_start_B, NULL, 2);
 	pthread_barrier_init(&tell_main_B_is_running, NULL, 2);
 	pthread_barrier_init(&tell_main_C_has_lock_L, NULL, 2);
+#endif
+
+	setup_ftrace_marker();
+	pthread_barrier_init(&tell_main_C_is_running, NULL, 2);
 
 	if (nopi)
 		pthread_mutex_init(&L_lock, NULL);
