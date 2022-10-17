@@ -90,8 +90,9 @@ static void ftrace_write(const char *fmt, ...)
 #define C_PRIO 2
 
 #define A_NICE -10
-#define B_NICE -5
+#define B_NICE -10
 #define C_NICE -10
+#define D_NICE -10
 
 static int a_prio;
 static pid_t a_pid;
@@ -131,7 +132,6 @@ static void init_flags(void)
 
 #define barrier() asm volatile (" " : : : "memory")
 
-
 static void set_thread_prio(pid_t pid, int prio)
 {
 	struct sched_param sp = { .sched_priority = prio };
@@ -144,7 +144,6 @@ static void set_prio(int prio)
 {
 	set_thread_prio(0, prio);
 }
-
 
 struct sched_attr {
 	__u32 size;
@@ -166,8 +165,8 @@ struct sched_attr {
 	/* Utilization hints */
 	__u32 sched_util_min;
 	__u32 sched_util_max;
-
 };
+
 static void set_prio_nice(int nice)
 {
 	struct sched_attr attr = {};
@@ -199,16 +198,34 @@ static void set_prio_bind_cpu(int prio)
 	set_thread_prio_bind_cpu(0, prio);
 }
 
+static void bind_cpu(int cpu)
+{
+	cpu_set_t cpumask;
+
+	CPU_ZERO(&cpumask);
+	CPU_SET(cpu, &cpumask);
+	sched_setaffinity(0, sizeof(cpumask), &cpumask);
+}
+/* do crap */
+static int x;
+void func(void)
+{
+	x++;
+}
+
 static void *thread_A(void *arg)
 {
-	set_prio_bind_cpu(a_prio);
-	set_prio_nice(A_NICE);
+	bind_cpu(0);
+	// set_prio_nice(A_NICE);
 
 	a_pid = gettid();
 
 	ftrace_write("A is running\n");
-	pthread_barrier_wait(&tell_main_A_is_running);
+	// pthread_barrier_wait(&tell_main_A_is_running);
 
+	while (1)
+		func();
+#if 0
 	/* now wait till we should start */
 	pthread_mutex_lock(&A_lock);
 
@@ -224,16 +241,108 @@ static void *thread_A(void *arg)
 	pthread_mutex_unlock(&A_lock);
 
 	ftrace_write("A exits\n");
+#endif
 	return NULL;
 }
 
-/* do crap */
-static int x;
-void func(void)
+static void *thread_B(void *arg)
 {
-	x++;
+	bind_cpu(0);
+	// set_prio_nice(B_NICE);
+
+	b_pid = gettid();
+
+	ftrace_write("B is running\n");
+	// pthread_barrier_wait(&tell_main_A_is_running);
+
+	while (1)
+		func();
+#if 0
+	/* now wait till we should start */
+	pthread_mutex_lock(&A_lock);
+
+	ftrace_write("A flags C to start B\n");
+	pthread_barrier_wait(&flag_C_to_start_B);
+
+	/* We should have preempted C so we grab lock L */
+	ftrace_write("A grabs lock L\n");
+	pthread_mutex_lock(&L_lock);
+	ftrace_write("A has lock L\n");
+	pthread_mutex_unlock(&L_lock);
+
+	pthread_mutex_unlock(&A_lock);
+
+	ftrace_write("A exits\n");
+#endif
+	return NULL;
 }
 
+static void *thread_C(void *arg)
+{
+	bind_cpu(0);
+	// set_prio_nice(C_NICE);
+
+	c_pid = gettid();
+
+	ftrace_write("C is running\n");
+	// pthread_barrier_wait(&tell_main_A_is_running);
+
+	while (1)
+		func();
+#if 0
+	/* now wait till we should start */
+	pthread_mutex_lock(&A_lock);
+
+	ftrace_write("A flags C to start B\n");
+	pthread_barrier_wait(&flag_C_to_start_B);
+
+	/* We should have preempted C so we grab lock L */
+	ftrace_write("A grabs lock L\n");
+	pthread_mutex_lock(&L_lock);
+	ftrace_write("A has lock L\n");
+	pthread_mutex_unlock(&L_lock);
+
+	pthread_mutex_unlock(&A_lock);
+
+	ftrace_write("A exits\n");
+#endif
+	return NULL;
+}
+
+static void *thread_D(void *arg)
+{
+	bind_cpu(0);
+	// set_prio_nice(D_NICE);
+
+	d_pid = gettid();
+
+	ftrace_write("D is running\n");
+	// pthread_barrier_wait(&tell_main_A_is_running);
+
+	while (1)
+		func();
+#if 0
+	/* now wait till we should start */
+	pthread_mutex_lock(&A_lock);
+
+	ftrace_write("A flags C to start B\n");
+	pthread_barrier_wait(&flag_C_to_start_B);
+
+	/* We should have preempted C so we grab lock L */
+	ftrace_write("A grabs lock L\n");
+	pthread_mutex_lock(&L_lock);
+	ftrace_write("A has lock L\n");
+	pthread_mutex_unlock(&L_lock);
+
+	pthread_mutex_unlock(&A_lock);
+
+	ftrace_write("A exits\n");
+#endif
+	return NULL;
+}
+
+
+#if 0
 static void *thread_B(void *arg)
 {
 	set_prio_bind_cpu(B_PRIO);
@@ -304,6 +413,7 @@ static void *thread_C(void *arg)
 	ftrace_write("C exits\n");
 	return NULL;
 }
+#endif
 
 static void perr(const char *fmt, ...)
 {
@@ -316,6 +426,32 @@ static void perr(const char *fmt, ...)
 	exit(-1);
 }
 
+int test_task_spin(int block)
+{
+	pthread_t A,B,C,D;
+	int ret = pthread_create(&A, NULL, thread_A, NULL);
+	if (ret < 0)
+		perr("creating thread A");
+
+	int ret = pthread_create(&B, NULL, thread_B, NULL);
+	if (ret < 0)
+		perr("creating thread A");
+
+	int ret = pthread_create(&C, NULL, thread_C, NULL);
+	if (ret < 0)
+		perr("creating thread A");
+
+	int ret = pthread_create(&D, NULL, thread_D, NULL);
+	if (ret < 0)
+		perr("creating thread A");
+
+	pthread_join(A, NULL);
+	pthread_join(B, NULL);
+	pthread_join(C, NULL);
+	pthread_join(D, NULL);
+}
+
+#if 0
 int pi_inherit_test(int up_prio)
 {
 	pthread_t A,B,C;
@@ -403,12 +539,15 @@ int pi_inherit_test(int up_prio)
 	return ret;
 }
 
+#endif
+
 int main (int argc, char **argv)
 {
 	int nopi = 0;
 	int c;
 	int ret;
 
+#if 0
 	while ((c=getopt(argc, argv, "nd")) >= 0) {
 		switch (c) {
 			case 'n':
@@ -419,8 +558,9 @@ int main (int argc, char **argv)
 				break;
 		}
 	}
+#endif
 
-	printf("When C is not blocked, it shoud take: %lf secs\n",  measure_time(c_spin_a_little));
+	// printf("When C is not blocked, it shoud take: %lf secs\n",  measure_time(c_spin_a_little));
 
 	setup_ftrace_marker();
 
@@ -444,6 +584,8 @@ int main (int argc, char **argv)
 		if (pthread_mutex_init(&L_lock, &attr))
 			perr("pthread_mutex_init");
 
+	test_task_spin(0);
+#if 0
 	ret = pi_inherit_test(0);
 	printf("Time C took to do work: %lf secs\n", C_spin_time);
 	if (ret)
@@ -453,6 +595,6 @@ int main (int argc, char **argv)
 	// ret = pi_inherit_test(1);
 	// if (ret)
 	//	exit(ret);
-
+#endif
 	exit(0);
 }
