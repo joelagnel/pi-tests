@@ -96,6 +96,9 @@ static void ftrace_write(const char *fmt, ...)
 
 static int a_prio;
 static pid_t a_pid;
+static pid_t b_pid;
+static pid_t c_pid;
+static pid_t d_pid;
 
 #define SLEEP_SECS 5
 
@@ -433,15 +436,15 @@ int test_task_spin(int block)
 	if (ret < 0)
 		perr("creating thread A");
 
-	int ret = pthread_create(&B, NULL, thread_B, NULL);
+	ret = pthread_create(&B, NULL, thread_B, NULL);
 	if (ret < 0)
 		perr("creating thread A");
 
-	int ret = pthread_create(&C, NULL, thread_C, NULL);
+	ret = pthread_create(&C, NULL, thread_C, NULL);
 	if (ret < 0)
 		perr("creating thread A");
 
-	int ret = pthread_create(&D, NULL, thread_D, NULL);
+	ret = pthread_create(&D, NULL, thread_D, NULL);
 	if (ret < 0)
 		perr("creating thread A");
 
